@@ -24,7 +24,39 @@ class ProcessingResult:
     error_message: Optional[str] = None
 
 
+def validate_api_key(api_key: str) -> bool:
+    try:
+        openai.api_key = api_key
+        openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": "test"}],
+            max_tokens=5
+        )
+        return True
+    except:
+        st.error(f"❌ API key không hợp lệ: {api_key}")
+        return False
+
+
+def check_internet() -> bool:
+    try:
+        requests.get("http://www.google.com", timeout=3)
+        return True
+    except:
+        st.error("❌ Không có kết nối internet")
+        return False
+
+
+def validate_video_file(file) -> bool:
+    if file.size > 500 * 1024 * 1024:  # 500MB
+        st.error("❌ File quá lớn. Giới hạn 500MB")
+        return False
+    return True
+
+
 class TranslationCache:
+    MAX_CACHE_SIZE = 100 * 1024 * 1024  # 100MB
+
     def __init__(self, cache_file: str = "translation_cache.json"):
         self.cache_file = cache_file
         self._cache: Dict[str, List[str]] = {}
@@ -35,7 +67,8 @@ class TranslationCache:
             try:
                 with open(self.cache_file, 'r', encoding='utf-8') as f:
                     self._cache = json.load(f)
-                st.info(f"📂 Đã tải {len(self._cache)} bản dịch từ cache")
+                st.info(
+                    f"📂 Đã tải {len(self._cache)} bản dịch từ bộ nhớ cache")
             except Exception as e:
                 st.warning(f"⚠️ Lỗi khi tải cache: {str(e)}")
                 self._cache = {}
@@ -49,6 +82,10 @@ class TranslationCache:
         return self._cache.get(key)
 
     def set(self, key: str, value: List[str]) -> None:
+        cache_size = len(json.dumps(self._cache).encode('utf-8'))
+        if cache_size > self.MAX_CACHE_SIZE:
+            self._cache.clear()
+            st.warning("🗑️ Đã xóa cache do vượt quá dung lượng")
         self._cache[key] = value
         self.save()
 
@@ -71,7 +108,6 @@ class CostTracker:
     def calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
         if model not in self.PRICE_PER_1K_TOKENS:
             return 0
-
         pricing = self.PRICE_PER_1K_TOKENS[model]
         input_cost = (input_tokens / 1000) * pricing["input"]
         output_cost = (output_tokens / 1000) * pricing["output"]
@@ -89,10 +125,10 @@ class CostTracker:
         minutes = int((seconds % 3600) // 60)
         seconds = int(seconds % 60)
         if hours > 0:
-            return f"{hours}h {minutes}m {seconds}s"
+            return f"{hours} giờ {minutes} phút {seconds} giây"
         elif minutes > 0:
-            return f"{minutes}m {seconds}s"
-        return f"{seconds}s"
+            return f"{minutes} phút {seconds} giây"
+        return f"{seconds} giây"
 
 
 class VideoProcessor:
@@ -112,33 +148,31 @@ class VideoProcessor:
         srt_path = self.output_dir / "output.srt"
 
         try:
-            # Handle video source
             if source_type == "upload":
                 source_name = source_data.name
-                progress_callback(15, "📥 Saving uploaded video... (15%)")
+                progress_callback(15, "📥 Đang lưu video... (15%)")
                 if not self._save_uploaded_file(source_data, video_path):
-                    return ProcessingResult(False, error_message="Failed to save uploaded file")
-            else:  # URL
+                    return ProcessingResult(False, error_message="Lỗi khi lưu file")
+            else:
                 source_name = source_data
-                progress_callback(15, "📥 Downloading video from URL... (15%)")
+                progress_callback(15, "📥 Đang tải video từ URL... (15%)")
                 if not self._download_video(source_data, video_path):
-                    return ProcessingResult(False, error_message="Failed to download video")
+                    return ProcessingResult(False, error_message="Lỗi khi tải video")
 
-            # Extract audio
-            progress_callback(30, "🎵 Extracting audio from video... (30%)")
+            progress_callback(30, "🎵 Đang trích xuất âm thanh... (30%)")
             if not self._extract_audio(video_path, audio_path):
-                return ProcessingResult(False, error_message="Failed to extract audio")
+                return ProcessingResult(False, error_message="Lỗi khi trích xuất âm thanh")
 
-            progress_callback(45, "🔍 Converting speech to text... (45%)")
+            progress_callback(
+                45, "🔍 Đang chuyển đổi âm thanh thành văn bản... (45%)")
             success, detected_language = self._speech_to_srt(
                 audio_path, srt_path)
             if not success:
-                return ProcessingResult(False, error_message="Failed to create SRT")
+                return ProcessingResult(False, error_message="Lỗi khi tạo phụ đề")
 
             return ProcessingResult(True, str(srt_path), source_name, detected_language)
 
         finally:
-            # Cleanup temporary files
             self._cleanup_temp_files([video_path, audio_path])
 
     def _save_uploaded_file(self, uploaded_file: any, save_path: Path) -> bool:
@@ -147,7 +181,7 @@ class VideoProcessor:
                 f.write(uploaded_file.getbuffer())
             return True
         except Exception as e:
-            st.error(f"Error saving file: {str(e)}")
+            st.error(f"Lỗi khi lưu file: {str(e)}")
             return False
 
     def _download_video(self, url: str, output_path: Path) -> bool:
@@ -169,22 +203,22 @@ class VideoProcessor:
                             progress = downloaded / total_size
                             progress_bar.progress(progress)
                             progress_text.text(
-                                f"Downloading video: {(progress * 100):.1f}%")
+                                f"Đang tải: {(progress * 100):.1f}%")
             return True
         except Exception as e:
-            st.error(f"Error downloading video: {str(e)}")
+            st.error(f"Lỗi khi tải video: {str(e)}")
             return False
 
     def _extract_audio(self, video_path: Path, audio_path: Path) -> bool:
         try:
             video = VideoFileClip(str(video_path))
             if video.audio is None:
-                raise Exception("Video has no audio")
+                raise Exception("Video không có âm thanh")
             video.audio.write_audiofile(str(audio_path), logger=None)
             video.close()
             return True
         except Exception as e:
-            st.error(f"Error extracting audio: {str(e)}")
+            st.error(f"Lỗi khi trích xuất âm thanh: {str(e)}")
             return False
 
     def _speech_to_srt(self, audio_path: Path, output_srt: Path) -> Tuple[bool, Optional[str]]:
@@ -193,13 +227,11 @@ class VideoProcessor:
 
         try:
             with sr.AudioFile(str(audio_path)) as source:
-                # Language detection from sample
                 audio_sample = recognizer.record(
                     source, duration=min(10, source.DURATION))
                 detected_language = self._detect_language(
                     audio_sample, recognizer)
 
-                # Process full audio
                 source = sr.AudioFile(str(audio_path))
                 with source as audio_file:
                     self._process_audio_chunks(
@@ -207,7 +239,7 @@ class VideoProcessor:
 
             return True, detected_language
         except Exception as e:
-            st.error(f"Error creating SRT: {str(e)}")
+            st.error(f"Lỗi khi tạo phụ đề: {str(e)}")
             return False, None
 
     def _detect_language(self, audio_sample: sr.AudioData, recognizer: sr.Recognizer) -> str:
@@ -217,12 +249,12 @@ class VideoProcessor:
                     audio_sample, language=lang_code)
                 detected_lang = detect(sample_text)
                 if detected_lang:
-                    st.info(f"🎯 Detected language: {detected_lang}")
+                    st.info(f"🎯 Ngôn ngữ phát hiện: {detected_lang}")
                     return detected_lang
             except:
                 continue
-
-        st.warning("⚠️ Could not detect language, using Japanese as default")
+        st.warning(
+            "⚠️ Không phát hiện được ngôn ngữ, dùng tiếng Nhật làm mặc định")
         return 'ja'
 
     def _process_audio_chunks(self, audio_file: sr.AudioFile, recognizer: sr.Recognizer,
@@ -245,8 +277,7 @@ class VideoProcessor:
                 except sr.UnknownValueError:
                     text = "..."
                 except sr.RequestError as e:
-                    st.warning(
-                        f"Google Speech Recognition API error: {str(e)}")
+                    st.warning(f"Lỗi API Google Speech Recognition: {str(e)}")
                     continue
 
                 self._write_subtitle(srt_file, subtitle_count, i,
@@ -256,18 +287,14 @@ class VideoProcessor:
                 if audio_length:
                     progress = i / audio_length
                     progress_bar.progress(progress)
-                    progress_text.text(
-                        f"Processing audio: {(progress * 100):.1f}%")
+                    progress_text.text(f"Đang xử lý: {(progress * 100):.1f}%")
 
     @staticmethod
     def _write_subtitle(srt_file: any, count: int, start_seconds: float,
                         end_seconds: float, text: str) -> None:
         start_time = VideoProcessor._create_srt_timestamp(start_seconds)
         end_time = VideoProcessor._create_srt_timestamp(end_seconds)
-
-        srt_file.write(f"{count}\n")
-        srt_file.write(f"{start_time} --> {end_time}\n")
-        srt_file.write(f"{text}\n\n")
+        srt_file.write(f"{count}\n{start_time} --> {end_time}\n{text}\n\n")
 
     @staticmethod
     def _create_srt_timestamp(seconds: float) -> str:
@@ -284,7 +311,7 @@ class VideoProcessor:
                 if file.exists():
                     file.unlink()
             except Exception as e:
-                st.warning(f"Error deleting temporary file {file}: {str(e)}")
+                st.warning(f"Lỗi khi xóa file tạm {file}: {str(e)}")
 
 
 class SubtitleTranslator:
@@ -299,14 +326,12 @@ class SubtitleTranslator:
         self.cost_tracker.total_lines = len(subs)
         output_file = f"{os.path.splitext(input_file)[0]}-{target_language}.srt"
 
-        st.info(f"🚀 Starting translation: {input_file}")
-        st.info(f"📝 Total lines: {self.cost_tracker.total_lines}")
+        st.info(f"🚀 Bắt đầu dịch: {input_file}")
+        st.info(f"📝 Tổng số dòng: {self.cost_tracker.total_lines}")
 
-        # Auto-detect source language if not provided
         if not source_language:
             source_language = self._detect_source_language(subs)
 
-        # Optimize batch size based on average line length
         batch_size = self._calculate_optimal_batch_size(subs)
         self._process_subtitles(
             subs, batch_size, source_language, target_language, intensity)
@@ -315,7 +340,7 @@ class SubtitleTranslator:
         self._display_translation_stats(output_file)
 
         if progress_callback:
-            progress_callback(100, "✅ Translation completed! (100%)")
+            progress_callback(100, "✅ Đã hoàn thành dịch! (100%)")
 
         return output_file
 
@@ -325,13 +350,12 @@ class SubtitleTranslator:
             try:
                 detected_lang = detect(sample_text)
                 if detected_lang:
-                    st.info(f"🎯 Detected source language: {detected_lang}")
+                    st.info(f"🎯 Ngôn ngữ phát hiện: {detected_lang}")
                     return detected_lang
             except:
                 pass
-
         st.warning(
-            "⚠️ Could not detect source language, using Japanese as default")
+            "⚠️ Không phát hiện được ngôn ngữ, dùng tiếng Nhật làm mặc định")
         return 'ja'
 
     @staticmethod
@@ -367,45 +391,38 @@ class SubtitleTranslator:
 
                 progress = (i + 1) / self.cost_tracker.total_lines
                 progress_bar.progress(progress)
-                progress_text.text(
-                    f"Translation Progress: {(progress * 100):.1f}%")
+                progress_text.text(f"Tiến độ dịch: {(progress * 100):.1f}%")
 
     def _translate_batch(self, texts: List[str], source_language: str,
                          target_language: str, intensity: str) -> List[str]:
-        """Translate a batch of texts using OpenAI API with caching"""
         try:
-            # Check cache first
             cache_key = hashlib.md5(
                 f"{''.join(texts)}{source_language}-{target_language}{intensity}".encode()
             ).hexdigest()
 
             if cached_result := self.cache.get(cache_key):
                 self.cost_tracker.processed_lines += len(texts)
-                st.info(f"🎯 Using {len(texts)} lines from cache")
+                st.info(f"🎯 Sử dụng {len(texts)} dòng từ cache")
                 return cached_result
 
-            # Prepare translation parameters
-            style = "natural and polite translation" if intensity == "mild" else "casual and colloquial translation"
+            style = "dịch tự nhiên, phù hợp với bối cảnh người lớn, hấp dẫn và thú vị." if intensity == "mild" else "văn phong thông dụng, tự nhiên"
             temperature = 0.6 if intensity == "mild" else 0.9
 
-            # Format input texts with numbers
             numbered_texts = [f"{i+1}. {text}" for i, text in enumerate(texts)]
             combined_text = "\n".join(numbered_texts)
 
-            # Create translation request
-            system_message = f"You are a professional translator. Provide {style}. Translate from {source_language} to Vietnamese."
+            system_message = f"Bạn là một dịch giả chuyên nghiệp. Hãy dịch với {style}. Dịch từ {source_language} sang tiếng Việt."
 
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_message},
-                    {"role": "user", "content": f"Translate the following dialogue to Vietnamese, maintaining line numbers and order:\n\n{combined_text}"}
+                    {"role": "user", "content": f"Dịch đoạn hội thoại sau sang tiếng Việt, giữ nguyên số thứ tự và trình tự:\n\n{combined_text}"}
                 ],
                 max_tokens=4000,
                 temperature=temperature
             )
 
-            # Process response
             batch_cost = self.cost_tracker.update_stats(
                 response['usage']['prompt_tokens'],
                 response['usage']['completion_tokens']
@@ -419,56 +436,49 @@ class SubtitleTranslator:
                 for sent in translated_sentences
             ]
 
-            # Validate output
             if len(translated_sentences) != len(texts):
                 st.warning(
-                    f"⚠️ Translation count mismatch ({len(translated_sentences)} vs {len(texts)})")
+                    f"⚠️ Số dòng dịch không khớp ({len(translated_sentences)} vs {len(texts)})")
                 translated_sentences = self._normalize_output(
                     translated_sentences, len(texts))
 
-            # Cache result
             self.cache.set(cache_key, translated_sentences)
 
             self.cost_tracker.processed_lines += len(texts)
-            st.success(
-                f"✅ Translated batch: {len(texts)} lines (${batch_cost:.4f})")
+            st.success(f"✅ Đã dịch: {len(texts)} dòng (${batch_cost:.4f})")
 
             return translated_sentences
 
         except Exception as e:
-            st.error(f"❌ Translation error: {e}")
+            st.error(f"❌ Lỗi dịch: {e}")
             return [None] * len(texts)
 
     def _normalize_output(self, sentences: List[str], target_length: int) -> List[str]:
-        """Ensure output matches input length by truncating or padding"""
         if len(sentences) < target_length:
             sentences.extend([""] * (target_length - len(sentences)))
         return sentences[:target_length]
 
     def _display_translation_stats(self, output_file: str) -> None:
-        """Display final translation statistics"""
         elapsed_time = time.time() - self.cost_tracker.start_time
         st.success(f"""
-        📊 TRANSLATION SUMMARY
+        📊 THỐNG KÊ DỊCH
         {'=' * 48}
-        ✅ File saved to: {output_file}
-        ⏱️ Total time: {self.cost_tracker.format_time(elapsed_time)}
-        📝 Lines processed: {self.cost_tracker.total_lines}
-        💰 Total cost: ${self.cost_tracker.total_cost:.4f}
-        🔤 Total tokens: {self.cost_tracker.total_tokens:,}
-        💵 Average cost per line: ${(self.cost_tracker.total_cost/self.cost_tracker.total_lines):.4f}
+        ✅ File đã lưu: {output_file}
+        ⏱️ Tổng thời gian: {self.cost_tracker.format_time(elapsed_time)}
+        📝 Số dòng xử lý: {self.cost_tracker.total_lines}
+        💰 Tổng chi phí: ${self.cost_tracker.total_cost:.4f}
+        🔤 Tổng tokens: {self.cost_tracker.total_tokens:,}
+        💵 Chi phí/dòng: ${(self.cost_tracker.total_cost/self.cost_tracker.total_lines):.4f}
         """)
 
-
 def create_app():
-    """Create and configure the Streamlit application"""
     st.set_page_config(
-        page_title="Video to SRT Converter",
+        page_title="Chuyển Đổi Video sang Phụ Đề",
         page_icon="🎥",
         layout="centered"
     )
 
-    st.title('🎥 Video to Subtitle Converter')
+    st.title('🎥 Chuyển Đổi Video sang Phụ Đề')
 
     if 'processed_files' not in st.session_state:
         st.session_state.processed_files = []
@@ -482,50 +492,78 @@ class StreamlitApp:
     def __init__(self):
         self.output_dir = Path(os.getcwd()) / "output"
         self.output_dir.mkdir(exist_ok=True)
+        self.temp_dir = self.output_dir / "temp"
+        self.temp_dir.mkdir(exist_ok=True)
 
         self.cache = TranslationCache()
         self.cost_tracker = CostTracker()
         self.video_processor = VideoProcessor(str(self.output_dir))
         self.translator = SubtitleTranslator(self.cache, self.cost_tracker)
 
-    def run(self):
-        """Run the Streamlit application"""
-        openai_key = st.text_input('OpenAI API Key:', type='password')
+    def cleanup_old_files(self):
+        try:
+            for file in os.listdir(self.temp_dir):
+                file_path = os.path.join(self.temp_dir, file)
+                if time.time() - os.path.getctime(file_path) > 24*3600:  # 24 giờ
+                    os.remove(file_path)
+        except Exception as e:
+            st.warning(f"⚠️ Lỗi dọn dẹp file tạm: {str(e)}")
 
-        tab1, tab2, tab3 = st.tabs(["Upload Video", "URL Video", "Upload SRT"])
+    def run(self):
+        if not check_internet():
+            return
+
+        openai_key = st.text_input('OpenAI API Key:', type='password')
+        if openai_key == 'abc':
+            openai_key = os.getenv('OPENAI_API_KEY', '')
+
+        tab1, tab2, tab3 = st.tabs(
+            ["Tải Video", "URL Video", "Tải File Phụ Đề"])
 
         with tab1:
-            uploaded_file = st.file_uploader("Choose video file", type=[
-                'mp4', 'avi', 'mkv', 'mov'])
+            uploaded_file = st.file_uploader("Chọn file video", type=[
+                                             'mp4', 'avi', 'mkv', 'mov'])
+            if uploaded_file:
+                st.info(
+                    f"Dung lượng file: {uploaded_file.size / 1024 / 1024:.1f}MB")
 
         with tab2:
-            url = st.text_input('Enter video URL:')
+            url = st.text_input('Nhập URL video:')
 
         with tab3:
-            uploaded_srt = st.file_uploader("Choose SRT file", type=['srt'])
+            uploaded_srt = st.file_uploader(
+                "Chọn file phụ đề SRT", type=['srt'])
 
-        intensity = st.selectbox('Translation style:', ['mild', 'hot'])
+        intensity = st.selectbox('Phong cách dịch:', [
+                                 'trang trọng', 'thông dụng'])
 
         has_input = bool(uploaded_file or (
             url and url.strip()) or uploaded_srt)
 
-        # Hiển thị trạng thái xử lý
         if st.session_state.is_processing:
-            st.info("🔄 Processing... Please wait")
+            st.info("🔄 Đang xử lý... Vui lòng đợi")
 
-        # Vô hiệu hóa nút khi đang xử lý
         process_button = st.button(
-            'Process',
+            'Xử lý',
             disabled=not (
                 has_input and openai_key) or st.session_state.is_processing,
             key='process_button'
         )
 
         if process_button:
+            if not validate_api_key(openai_key):
+                return
+
+            if uploaded_file and not validate_video_file(uploaded_file):
+                return
+
             st.session_state.is_processing = True
             try:
+                self.cleanup_old_files()
                 self._process_video_request(
-                    openai_key, uploaded_file, url, uploaded_srt, intensity)
+                    openai_key, uploaded_file, url, uploaded_srt,
+                    'mild' if intensity == 'trang trọng' else 'hot'
+                )
             finally:
                 st.session_state.is_processing = False
 
@@ -533,12 +571,10 @@ class StreamlitApp:
 
     def _process_video_request(self, openai_key: str, uploaded_file: any,
                                url: str, uploaded_srt: any, intensity: str) -> None:
-        """Process video or SRT file and create subtitles"""
         try:
             openai.api_key = openai_key
             self.cost_tracker.start()
 
-            # Initialize progress tracking
             progress_bar = st.progress(0)
             status_text = st.empty()
 
@@ -546,20 +582,16 @@ class StreamlitApp:
                 progress_bar.progress(progress / 100)
                 status_text.write(message)
 
-            # Initial progress
-            update_progress(10, "📥 Starting processing... (10%)")
+            update_progress(10, "📥 Bắt đầu xử lý... (10%)")
 
             if uploaded_srt:
-                # Process uploaded SRT file
-                update_progress(30, "📜 Processing SRT file... (30%)")
+                update_progress(30, "📜 Đang xử lý file phụ đề... (30%)")
                 original_srt = self._save_uploaded_file(
                     uploaded_srt, self.output_dir / "original.srt")
 
                 if original_srt:
                     update_progress(
-                        50, "🎯 SRT file processed. Starting translation... (50%)")
-
-                    # Translate the SRT with progress updates
+                        50, "🎯 Đã xử lý phụ đề. Bắt đầu dịch... (50%)")
                     translated_srt = self.translator.translate_srt(
                         str(original_srt),
                         source_language=None,
@@ -568,18 +600,15 @@ class StreamlitApp:
                     )
 
                     if translated_srt:
-                        update_progress(100, "✅ Processing completed! (100%)")
-
+                        update_progress(100, "✅ Hoàn thành! (100%)")
                         self._add_to_history(str(original_srt), translated_srt,
                                              uploaded_srt.name, None)
                         self._display_download_buttons(
                             str(original_srt), translated_srt, None)
             else:
-                # Determine video source type and data
                 source_type = "upload" if uploaded_file else "url"
                 source_data = uploaded_file if uploaded_file else url
 
-                # Process video with progress updates
                 result = self.video_processor.process_video(
                     source_type, source_data,
                     progress_callback=update_progress
@@ -587,9 +616,7 @@ class StreamlitApp:
 
                 if result.success and result.srt_path:
                     update_progress(
-                        50, "🎯 Video processed. Starting translation... (50%)")
-
-                    # Translate the SRT with progress updates
+                        50, "🎯 Đã xử lý video. Bắt đầu dịch... (50%)")
                     translated_srt = self.translator.translate_srt(
                         result.srt_path,
                         source_language=result.detected_language,
@@ -598,33 +625,30 @@ class StreamlitApp:
                     )
 
                     if translated_srt:
-                        update_progress(100, "✅ Processing completed! (100%)")
-
+                        update_progress(100, "✅ Hoàn thành! (100%)")
                         self._add_to_history(result.srt_path, translated_srt,
                                              result.source_name, result.detected_language)
                         self._display_download_buttons(result.srt_path, translated_srt,
                                                        result.detected_language)
                 else:
-                    st.error(
-                        f"Failed to process video: {result.error_message}")
+                    st.error(f"Lỗi xử lý video: {result.error_message}")
 
         except Exception as e:
-            st.error(f"Error during processing: {str(e)}")
+            st.error(f"Lỗi trong quá trình xử lý: {str(e)}")
         finally:
             st.session_state.is_processing = False
 
-    def _save_uploaded_file(self, uploaded_file: any, save_path: Path) -> Optional[Path]:
+    def _save_uploaded_file(self, uploaded_file: any, save_path: Path) -> Optional[str]:
         try:
             with open(save_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            return save_path
+            return str(save_path)
         except Exception as e:
-            st.error(f"Error saving file: {str(e)}")
+            st.error(f"Lỗi khi lưu file: {str(e)}")
             return None
 
     def _add_to_history(self, original_srt: str, translated_srt: str,
                         source: str, source_language: str) -> None:
-        """Add processed file to history"""
         st.session_state.processed_files.append({
             'original_srt': original_srt,
             'translated_srt': translated_srt,
@@ -635,8 +659,7 @@ class StreamlitApp:
 
     def _display_download_buttons(self, original_srt: str, translated_srt: str,
                                   source_language: str) -> None:
-        """Display download buttons for SRT files"""
-        st.success("✅ Processing complete! Download subtitle files:")
+        st.success("✅ Hoàn thành! Tải file phụ đề:")
 
         with st.container():
             col1, col2, col3 = st.columns([1, 2, 1])
@@ -645,59 +668,77 @@ class StreamlitApp:
 
                 with open(original_srt, 'rb') as f:
                     st.download_button(
-                        label=f"⬇️ Download original subtitles ({source_language})",
+                        label=f"⬇️ Tải phụ đề gốc ({source_language or 'không xác định'})",
                         data=f,
-                        file_name=f"original_{timestamp}.srt",
+                        file_name=f"goc_{timestamp}.srt",
                         mime="text/srt",
-                        use_container_width=True
+                        use_container_width=True,
+                        disabled=st.session_state.is_processing
                     )
 
                 st.write("")
 
                 with open(translated_srt, 'rb') as f:
                     st.download_button(
-                        label="⬇️ Download Vietnamese subtitles",
+                        label="⬇️ Tải phụ đề tiếng Việt",
                         data=f,
-                        file_name=f"translated_{timestamp}.srt",
+                        file_name=f"tiengviet_{timestamp}.srt",
                         mime="text/srt",
-                        use_container_width=True
+                        use_container_width=True,
+                        disabled=st.session_state.is_processing
                     )
 
     def _display_history(self) -> None:
-        """Display processing history"""
         if st.session_state.processed_files:
-            st.subheader("Processing History:")
+            st.subheader("📋 Lịch sử xử lý")
+
             for idx, file in enumerate(reversed(st.session_state.processed_files)):
                 with st.expander(f"{idx + 1}. {file['source']} ({file['timestamp']})"):
-                    st.text(f"Source language: {file['source_language']}")
+                    st.markdown(
+                        f"**Ngôn ngữ gốc:** {file['source_language'] or 'Không xác định'}")
 
-                    st.text("Original SRT:")
-                    with open(file['original_srt'], 'r', encoding='utf-8') as f:
-                        st.code(f.read(), language='text')
+                    with st.expander("Xem phụ đề gốc"):
+                        try:
+                            with open(file['original_srt'], 'r', encoding='utf-8') as f:
+                                st.code(f.read(), language='text')
+                        except Exception:
+                            st.error("❌ Không thể đọc file phụ đề gốc")
 
-                    st.text("Translated SRT:")
-                    with open(file['translated_srt'], 'r', encoding='utf-8') as f:
-                        st.code(f.read(), language='text')
+                    with st.expander("Xem phụ đề đã dịch"):
+                        try:
+                            with open(file['translated_srt'], 'r', encoding='utf-8') as f:
+                                st.code(f.read(), language='text')
+                        except Exception:
+                            st.error("❌ Không thể đọc file phụ đề đã dịch")
 
                     col1, col2 = st.columns(2)
                     with col1:
-                        with open(file['original_srt'], 'rb') as f:
-                            st.download_button(
-                                label=f"Download original ({file['source_language']})",
-                                data=f,
-                                file_name=f"original_{idx}.srt",
-                                mime="text/srt",
-                                key=f"orig_{idx}"
-                            )
+                        try:
+                            with open(file['original_srt'], 'rb') as f:
+                                st.download_button(
+                                    label=f"⬇️ Tải phụ đề gốc",
+                                    data=f,
+                                    file_name=f"goc_{idx}.srt",
+                                    mime="text/srt",
+                                    key=f"orig_{idx}",
+                                    disabled=st.session_state.is_processing
+                                )
+                        except Exception:
+                            st.error("❌ File gốc không khả dụng")
+
                     with col2:
-                        with open(file['translated_srt'], 'rb') as f:
-                            st.download_button(
-                                label="Download Vietnamese",
-                                data=f,
-                                file_name=f"translated_{idx}.srt",
-                                mime="text/srt",
-                                key=f"trans_{idx}"
-                            )
+                        try:
+                            with open(file['translated_srt'], 'rb') as f:
+                                st.download_button(
+                                    label="⬇️ Tải phụ đề Việt",
+                                    data=f,
+                                    file_name=f"tiengviet_{idx}.srt",
+                                    mime="text/srt",
+                                    key=f"trans_{idx}",
+                                    disabled=st.session_state.is_processing
+                                )
+                        except Exception:
+                            st.error("❌ File dịch không khả dụng")
 
 
 if __name__ == "__main__":
