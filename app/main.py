@@ -496,7 +496,6 @@ class StreamlitApp:
                 self._process_video_request(openai_key, uploaded_file, url, intensity)
             finally:
                 st.session_state.is_processing = False
-                st.rerun()  # Refresh page to reset button state
 
         self._display_history()
 
