@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple
 from pathlib import Path
 
+
 @dataclass
 class ProcessingResult:
     success: bool
@@ -21,6 +22,7 @@ class ProcessingResult:
     source_name: Optional[str] = None
     detected_language: Optional[str] = None
     error_message: Optional[str] = None
+
 
 class TranslationCache:
     def __init__(self, cache_file: str = "translation_cache.json"):
@@ -50,6 +52,7 @@ class TranslationCache:
         self._cache[key] = value
         self.save()
 
+
 class CostTracker:
     PRICE_PER_1K_TOKENS = {
         "gpt-3.5-turbo": {"input": 0.0010, "output": 0.0020}
@@ -68,7 +71,7 @@ class CostTracker:
     def calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
         if model not in self.PRICE_PER_1K_TOKENS:
             return 0
-        
+
         pricing = self.PRICE_PER_1K_TOKENS[model]
         input_cost = (input_tokens / 1000) * pricing["input"]
         output_cost = (output_tokens / 1000) * pricing["output"]
@@ -90,6 +93,7 @@ class CostTracker:
         elif minutes > 0:
             return f"{minutes}m {seconds}s"
         return f"{seconds}s"
+
 
 class VideoProcessor:
     LANGUAGE_CODES = {
@@ -126,7 +130,8 @@ class VideoProcessor:
                 return ProcessingResult(False, error_message="Failed to extract audio")
 
             progress_callback(45, "🔍 Converting speech to text... (45%)")
-            success, detected_language = self._speech_to_srt(audio_path, srt_path)
+            success, detected_language = self._speech_to_srt(
+                audio_path, srt_path)
             if not success:
                 return ProcessingResult(False, error_message="Failed to create SRT")
 
@@ -150,10 +155,10 @@ class VideoProcessor:
             response = requests.get(url, stream=True)
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
-            
+
             progress_bar = st.progress(0)
             progress_text = st.empty()
-            
+
             with open(output_path, 'wb') as f:
                 downloaded = 0
                 for chunk in response.iter_content(chunk_size=8192):
@@ -163,7 +168,8 @@ class VideoProcessor:
                         if total_size:
                             progress = downloaded / total_size
                             progress_bar.progress(progress)
-                            progress_text.text(f"Downloading video: {(progress * 100):.1f}%")
+                            progress_text.text(
+                                f"Downloading video: {(progress * 100):.1f}%")
             return True
         except Exception as e:
             st.error(f"Error downloading video: {str(e)}")
@@ -188,14 +194,17 @@ class VideoProcessor:
         try:
             with sr.AudioFile(str(audio_path)) as source:
                 # Language detection from sample
-                audio_sample = recognizer.record(source, duration=min(10, source.DURATION))
-                detected_language = self._detect_language(audio_sample, recognizer)
-                
+                audio_sample = recognizer.record(
+                    source, duration=min(10, source.DURATION))
+                detected_language = self._detect_language(
+                    audio_sample, recognizer)
+
                 # Process full audio
                 source = sr.AudioFile(str(audio_path))
                 with source as audio_file:
-                    self._process_audio_chunks(audio_file, recognizer, detected_language, output_srt)
-                
+                    self._process_audio_chunks(
+                        audio_file, recognizer, detected_language, output_srt)
+
             return True, detected_language
         except Exception as e:
             st.error(f"Error creating SRT: {str(e)}")
@@ -204,52 +213,58 @@ class VideoProcessor:
     def _detect_language(self, audio_sample: sr.AudioData, recognizer: sr.Recognizer) -> str:
         for lang_code in self.LANGUAGE_CODES.values():
             try:
-                sample_text = recognizer.recognize_google(audio_sample, language=lang_code)
+                sample_text = recognizer.recognize_google(
+                    audio_sample, language=lang_code)
                 detected_lang = detect(sample_text)
                 if detected_lang:
                     st.info(f"🎯 Detected language: {detected_lang}")
                     return detected_lang
             except:
                 continue
-        
+
         st.warning("⚠️ Could not detect language, using Japanese as default")
         return 'ja'
 
-    def _process_audio_chunks(self, audio_file: sr.AudioFile, recognizer: sr.Recognizer, 
-                            detected_language: str, output_srt: Path) -> None:
+    def _process_audio_chunks(self, audio_file: sr.AudioFile, recognizer: sr.Recognizer,
+                              detected_language: str, output_srt: Path) -> None:
         chunk_duration = 10
         audio_length = audio_file.DURATION
         progress_bar = st.progress(0)
         progress_text = st.empty()
-        
+
         with open(output_srt, 'w', encoding='utf-8') as srt_file:
             subtitle_count = 1
             for i in range(0, int(audio_length), chunk_duration):
-                audio = recognizer.record(audio_file, duration=min(chunk_duration, audio_length-i))
+                audio = recognizer.record(
+                    audio_file, duration=min(chunk_duration, audio_length-i))
                 try:
-                    lang_code = self.LANGUAGE_CODES.get(detected_language, 'ja-JP')
-                    text = recognizer.recognize_google(audio, language=lang_code)
+                    lang_code = self.LANGUAGE_CODES.get(
+                        detected_language, 'ja-JP')
+                    text = recognizer.recognize_google(
+                        audio, language=lang_code)
                 except sr.UnknownValueError:
                     text = "..."
                 except sr.RequestError as e:
-                    st.warning(f"Google Speech Recognition API error: {str(e)}")
+                    st.warning(
+                        f"Google Speech Recognition API error: {str(e)}")
                     continue
 
-                self._write_subtitle(srt_file, subtitle_count, i, 
-                                  min(i + chunk_duration, audio_length), text)
+                self._write_subtitle(srt_file, subtitle_count, i,
+                                     min(i + chunk_duration, audio_length), text)
                 subtitle_count += 1
-                
+
                 if audio_length:
                     progress = i / audio_length
                     progress_bar.progress(progress)
-                    progress_text.text(f"Processing audio: {(progress * 100):.1f}%")
+                    progress_text.text(
+                        f"Processing audio: {(progress * 100):.1f}%")
 
     @staticmethod
-    def _write_subtitle(srt_file: any, count: int, start_seconds: float, 
-                       end_seconds: float, text: str) -> None:
+    def _write_subtitle(srt_file: any, count: int, start_seconds: float,
+                        end_seconds: float, text: str) -> None:
         start_time = VideoProcessor._create_srt_timestamp(start_seconds)
         end_time = VideoProcessor._create_srt_timestamp(end_seconds)
-        
+
         srt_file.write(f"{count}\n")
         srt_file.write(f"{start_time} --> {end_time}\n")
         srt_file.write(f"{text}\n\n")
@@ -271,14 +286,15 @@ class VideoProcessor:
             except Exception as e:
                 st.warning(f"Error deleting temporary file {file}: {str(e)}")
 
+
 class SubtitleTranslator:
     def __init__(self, cache: TranslationCache, cost_tracker: CostTracker):
         self.cache = cache
         self.cost_tracker = cost_tracker
 
-    def translate_srt(self, input_file: str, source_language: Optional[str], 
-                     target_language: str = 'vi', intensity: str = "normal",
-                     progress_callback=None) -> Optional[str]:
+    def translate_srt(self, input_file: str, source_language: Optional[str],
+                      target_language: str = 'vi', intensity: str = "normal",
+                      progress_callback=None) -> Optional[str]:
         subs = pysrt.open(input_file)
         self.cost_tracker.total_lines = len(subs)
         output_file = f"{os.path.splitext(input_file)[0]}-{target_language}.srt"
@@ -292,14 +308,15 @@ class SubtitleTranslator:
 
         # Optimize batch size based on average line length
         batch_size = self._calculate_optimal_batch_size(subs)
-        self._process_subtitles(subs, batch_size, source_language, target_language, intensity)
-        
+        self._process_subtitles(
+            subs, batch_size, source_language, target_language, intensity)
+
         subs.save(output_file)
         self._display_translation_stats(output_file)
-        
+
         if progress_callback:
             progress_callback(100, "✅ Translation completed! (100%)")
-            
+
         return output_file
 
     def _detect_source_language(self, subs: pysrt.SubRipFile) -> str:
@@ -312,8 +329,9 @@ class SubtitleTranslator:
                     return detected_lang
             except:
                 pass
-        
-        st.warning("⚠️ Could not detect source language, using Japanese as default")
+
+        st.warning(
+            "⚠️ Could not detect source language, using Japanese as default")
         return 'ja'
 
     @staticmethod
@@ -326,7 +344,7 @@ class SubtitleTranslator:
         return 5
 
     def _process_subtitles(self, subs: pysrt.SubRipFile, batch_size: int,
-                          source_language: str, target_language: str, intensity: str) -> None:
+                           source_language: str, target_language: str, intensity: str) -> None:
         batch = []
         indices = []
         progress_bar = st.progress(0)
@@ -346,20 +364,21 @@ class SubtitleTranslator:
 
                 batch = []
                 indices = []
-                
+
                 progress = (i + 1) / self.cost_tracker.total_lines
                 progress_bar.progress(progress)
-                progress_text.text(f"Translation Progress: {(progress * 100):.1f}%")
+                progress_text.text(
+                    f"Translation Progress: {(progress * 100):.1f}%")
 
     def _translate_batch(self, texts: List[str], source_language: str,
-                        target_language: str, intensity: str) -> List[str]:
+                         target_language: str, intensity: str) -> List[str]:
         """Translate a batch of texts using OpenAI API with caching"""
         try:
             # Check cache first
             cache_key = hashlib.md5(
                 f"{''.join(texts)}{source_language}-{target_language}{intensity}".encode()
             ).hexdigest()
-            
+
             if cached_result := self.cache.get(cache_key):
                 self.cost_tracker.processed_lines += len(texts)
                 st.info(f"🎯 Using {len(texts)} lines from cache")
@@ -375,7 +394,7 @@ class SubtitleTranslator:
 
             # Create translation request
             system_message = f"You are a professional translator. Provide {style}. Translate from {source_language} to Vietnamese."
-            
+
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
@@ -392,23 +411,27 @@ class SubtitleTranslator:
                 response['usage']['completion_tokens']
             )
 
-            translated_text = response['choices'][0]['message']['content'].strip()
+            translated_text = response['choices'][0]['message']['content'].strip(
+            )
             translated_sentences = translated_text.split("\n")
             translated_sentences = [
-                sent.split(". ", 1)[-1] if ". " in sent else sent 
+                sent.split(". ", 1)[-1] if ". " in sent else sent
                 for sent in translated_sentences
             ]
 
             # Validate output
             if len(translated_sentences) != len(texts):
-                st.warning(f"⚠️ Translation count mismatch ({len(translated_sentences)} vs {len(texts)})")
-                translated_sentences = self._normalize_output(translated_sentences, len(texts))
+                st.warning(
+                    f"⚠️ Translation count mismatch ({len(translated_sentences)} vs {len(texts)})")
+                translated_sentences = self._normalize_output(
+                    translated_sentences, len(texts))
 
             # Cache result
             self.cache.set(cache_key, translated_sentences)
-            
+
             self.cost_tracker.processed_lines += len(texts)
-            st.success(f"✅ Translated batch: {len(texts)} lines (${batch_cost:.4f})")
+            st.success(
+                f"✅ Translated batch: {len(texts)} lines (${batch_cost:.4f})")
 
             return translated_sentences
 
@@ -436,6 +459,7 @@ class SubtitleTranslator:
         💵 Average cost per line: ${(self.cost_tracker.total_cost/self.cost_tracker.total_lines):.4f}
         """)
 
+
 def create_app():
     """Create and configure the Streamlit application"""
     st.set_page_config(
@@ -443,9 +467,9 @@ def create_app():
         page_icon="🎥",
         layout="centered"
     )
-    
+
     st.title('🎥 Video to Subtitle Converter')
-    
+
     if 'processed_files' not in st.session_state:
         st.session_state.processed_files = []
     if 'is_processing' not in st.session_state:
@@ -453,11 +477,12 @@ def create_app():
 
     return StreamlitApp()
 
+
 class StreamlitApp:
     def __init__(self):
         self.output_dir = Path(os.getcwd()) / "output"
         self.output_dir.mkdir(exist_ok=True)
-        
+
         self.cache = TranslationCache()
         self.cost_tracker = CostTracker()
         self.video_processor = VideoProcessor(str(self.output_dir))
@@ -466,95 +491,139 @@ class StreamlitApp:
     def run(self):
         """Run the Streamlit application"""
         openai_key = st.text_input('OpenAI API Key:', type='password')
-        
-        tab1, tab2 = st.tabs(["Upload Video", "URL Video"])
-        
+
+        tab1, tab2, tab3 = st.tabs(["Upload Video", "URL Video", "Upload SRT"])
+
         with tab1:
-            uploaded_file = st.file_uploader("Choose video file", type=['mp4', 'avi', 'mkv', 'mov'])
-            
+            uploaded_file = st.file_uploader("Choose video file", type=[
+                'mp4', 'avi', 'mkv', 'mov'])
+
         with tab2:
             url = st.text_input('Enter video URL:')
-        
+
+        with tab3:
+            uploaded_srt = st.file_uploader("Choose SRT file", type=['srt'])
+
         intensity = st.selectbox('Translation style:', ['mild', 'hot'])
-        
-        has_video = bool(uploaded_file or (url and url.strip()))
-        
+
+        has_input = bool(uploaded_file or (
+            url and url.strip()) or uploaded_srt)
+
         # Hiển thị trạng thái xử lý
         if st.session_state.is_processing:
-            st.info("🔄 Video is being processed... Please wait")
-            
+            st.info("🔄 Processing... Please wait")
+
         # Vô hiệu hóa nút khi đang xử lý
         process_button = st.button(
-            'Process Video', 
-            disabled=not (has_video and openai_key) or st.session_state.is_processing,
+            'Process',
+            disabled=not (
+                has_input and openai_key) or st.session_state.is_processing,
             key='process_button'
         )
-        
+
         if process_button:
             st.session_state.is_processing = True
             try:
-                self._process_video_request(openai_key, uploaded_file, url, intensity)
+                self._process_video_request(
+                    openai_key, uploaded_file, url, uploaded_srt, intensity)
             finally:
                 st.session_state.is_processing = False
 
         self._display_history()
 
-    def _process_video_request(self, openai_key: str, uploaded_file: any, 
-                             url: str, intensity: str) -> None:
-        """Process video and create subtitles"""
+    def _process_video_request(self, openai_key: str, uploaded_file: any,
+                               url: str, uploaded_srt: any, intensity: str) -> None:
+        """Process video or SRT file and create subtitles"""
         try:
             openai.api_key = openai_key
             self.cost_tracker.start()
-            
+
             # Initialize progress tracking
             progress_bar = st.progress(0)
             status_text = st.empty()
-            
+
             def update_progress(progress: int, message: str):
                 progress_bar.progress(progress / 100)
                 status_text.write(message)
-            
+
             # Initial progress
-            update_progress(10, "📥 Starting video processing... (10%)")
-            
-            # Determine source type and data
-            source_type = "upload" if uploaded_file else "url"
-            source_data = uploaded_file if uploaded_file else url
-            
-            # Process video with progress updates
-            result = self.video_processor.process_video(
-                source_type, source_data, 
-                progress_callback=update_progress
-            )
-            
-            if result.success and result.srt_path:
-                update_progress(50, "🎯 Video processed. Starting translation... (50%)")
-                
-                # Translate the SRT with progress updates
-                translated_srt = self.translator.translate_srt(
-                    result.srt_path,
-                    source_language=result.detected_language,
-                    intensity=intensity,
+            update_progress(10, "📥 Starting processing... (10%)")
+
+            if uploaded_srt:
+                # Process uploaded SRT file
+                update_progress(30, "📜 Processing SRT file... (30%)")
+                original_srt = self._save_uploaded_file(
+                    uploaded_srt, self.output_dir / "original.srt")
+
+                if original_srt:
+                    update_progress(
+                        50, "🎯 SRT file processed. Starting translation... (50%)")
+
+                    # Translate the SRT with progress updates
+                    translated_srt = self.translator.translate_srt(
+                        str(original_srt),
+                        source_language=None,
+                        intensity=intensity,
+                        progress_callback=update_progress
+                    )
+
+                    if translated_srt:
+                        update_progress(100, "✅ Processing completed! (100%)")
+
+                        self._add_to_history(str(original_srt), translated_srt,
+                                             uploaded_srt.name, None)
+                        self._display_download_buttons(
+                            str(original_srt), translated_srt, None)
+            else:
+                # Determine video source type and data
+                source_type = "upload" if uploaded_file else "url"
+                source_data = uploaded_file if uploaded_file else url
+
+                # Process video with progress updates
+                result = self.video_processor.process_video(
+                    source_type, source_data,
                     progress_callback=update_progress
                 )
-                
-                if translated_srt:
-                    update_progress(100, "✅ Processing completed! (100%)")
-                    
-                    self._add_to_history(result.srt_path, translated_srt, 
-                                       result.source_name, result.detected_language)
-                    self._display_download_buttons(result.srt_path, translated_srt, 
-                                                result.detected_language)
-            else:
-                st.error(f"Failed to process video: {result.error_message}")
-                
+
+                if result.success and result.srt_path:
+                    update_progress(
+                        50, "🎯 Video processed. Starting translation... (50%)")
+
+                    # Translate the SRT with progress updates
+                    translated_srt = self.translator.translate_srt(
+                        result.srt_path,
+                        source_language=result.detected_language,
+                        intensity=intensity,
+                        progress_callback=update_progress
+                    )
+
+                    if translated_srt:
+                        update_progress(100, "✅ Processing completed! (100%)")
+
+                        self._add_to_history(result.srt_path, translated_srt,
+                                             result.source_name, result.detected_language)
+                        self._display_download_buttons(result.srt_path, translated_srt,
+                                                       result.detected_language)
+                else:
+                    st.error(
+                        f"Failed to process video: {result.error_message}")
+
         except Exception as e:
             st.error(f"Error during processing: {str(e)}")
         finally:
             st.session_state.is_processing = False
 
-    def _add_to_history(self, original_srt: str, translated_srt: str, 
-                       source: str, source_language: str) -> None:
+    def _save_uploaded_file(self, uploaded_file: any, save_path: Path) -> Optional[Path]:
+        try:
+            with open(save_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            return save_path
+        except Exception as e:
+            st.error(f"Error saving file: {str(e)}")
+            return None
+
+    def _add_to_history(self, original_srt: str, translated_srt: str,
+                        source: str, source_language: str) -> None:
         """Add processed file to history"""
         st.session_state.processed_files.append({
             'original_srt': original_srt,
@@ -564,16 +633,16 @@ class StreamlitApp:
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
 
-    def _display_download_buttons(self, original_srt: str, translated_srt: str, 
-                                source_language: str) -> None:
+    def _display_download_buttons(self, original_srt: str, translated_srt: str,
+                                  source_language: str) -> None:
         """Display download buttons for SRT files"""
         st.success("✅ Processing complete! Download subtitle files:")
-        
+
         with st.container():
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                
+
                 with open(original_srt, 'rb') as f:
                     st.download_button(
                         label=f"⬇️ Download original subtitles ({source_language})",
@@ -582,9 +651,9 @@ class StreamlitApp:
                         mime="text/srt",
                         use_container_width=True
                     )
-                
+
                 st.write("")
-                
+
                 with open(translated_srt, 'rb') as f:
                     st.download_button(
                         label="⬇️ Download Vietnamese subtitles",
@@ -601,15 +670,15 @@ class StreamlitApp:
             for idx, file in enumerate(reversed(st.session_state.processed_files)):
                 with st.expander(f"{idx + 1}. {file['source']} ({file['timestamp']})"):
                     st.text(f"Source language: {file['source_language']}")
-                    
+
                     st.text("Original SRT:")
                     with open(file['original_srt'], 'r', encoding='utf-8') as f:
                         st.code(f.read(), language='text')
-                    
+
                     st.text("Translated SRT:")
                     with open(file['translated_srt'], 'r', encoding='utf-8') as f:
                         st.code(f.read(), language='text')
-                    
+
                     col1, col2 = st.columns(2)
                     with col1:
                         with open(file['original_srt'], 'rb') as f:
@@ -629,6 +698,7 @@ class StreamlitApp:
                                 mime="text/srt",
                                 key=f"trans_{idx}"
                             )
+
 
 if __name__ == "__main__":
     app = create_app()
