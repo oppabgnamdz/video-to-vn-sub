@@ -2,6 +2,7 @@ import streamlit as st
 import os
 from datetime import datetime
 from pathlib import Path
+from services.telegram_service import TelegramService
 
 from config import OUTPUT_DIR, TEMP_DIR
 from models.data_models import TranslationStats
@@ -45,9 +46,18 @@ class StreamlitApp:
 
             openai_key = ""
             if use_openai:
-                openai_key = st.text_input(
-                    '🔑 OpenAI API Key:', type='password')
-                if not openai_key:
+                user_input_key = st.text_input(
+                    '🔑 OpenAI API Key:', type='password'
+                )
+
+                # Nếu người dùng nhập "abc", lấy API key từ biến môi trường
+                if user_input_key.strip() == "abc":
+                    openai_key = os.getenv("OPENAI_API_KEY", "")
+                else:
+                    openai_key = user_input_key
+
+                # Cảnh báo nếu API key không hợp lệ
+                if use_openai and not openai_key:
                     st.warning(
                         "⚠️ Vui lòng nhập OpenAI API Key để sử dụng dịch vụ OpenAI")
 
@@ -202,6 +212,13 @@ class StreamlitApp:
         with col2:
             st.download_button("⬇️ Tải phụ đề đã dịch", open(
                 translated_srt, 'rb'), file_name="translated.srt")
+         # Gửi file phụ đề đến Telegram
+        bot_token = os.getenv("BOT_TOKEN", "")  # Thay bằng Token Bot
+        chat_id = os.getenv("CHAT_ID", "")  # Thay bằng Chat ID của channel
+        telegram_service = TelegramService(bot_token, chat_id)
+
+        telegram_service.send_file(
+            translated_srt, f"📄 Phụ đề tiếng Việt cho {source_name}")
 
     def _display_history(self):
         st.subheader("📋 Lịch sử xử lý")
