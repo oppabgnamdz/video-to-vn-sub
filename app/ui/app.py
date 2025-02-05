@@ -26,40 +26,29 @@ class StreamlitApp:
         self.video_processor = VideoProcessor(OUTPUT_DIR)
 
     def run(self):
-        # st.set_page_config(
-        #     page_title="🎬 Video Subtitle Translator",
-        #     page_icon="🌍",
-        #     layout="wide"
-        # )
+        """Khởi chạy ứng dụng Streamlit"""
 
-        # Sidebar - Cài đặt và thông tin cache
+        # Ẩn footer và menu của Streamlit
+        hide_streamlit_style = ''' 
+        <style>
+            footer {visibility: hidden;}
+            #MainMenu {visibility: hidden;}
+        </style>'''
+        st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+        # Sidebar - Cài đặt
         with st.sidebar:
             st.title("⚙️ Cài đặt")
             st.info("🎥 Ứng dụng chuyển đổi video thành phụ đề và dịch tự động!")
 
-            # Chọn dịch vụ dịch
-            translation_service = st.radio(
-                "Chọn dịch vụ dịch:",
-                ["🌟 OpenAI (Chất lượng cao)", "🆓 Google Translate (Miễn phí)"]
+            # Nhập OpenAI API Key (nếu có)
+            openai_key = st.text_input(
+                '🔑 OpenAI API Key (để sử dụng OpenAI)', type='password'
             )
-            use_openai = "OpenAI" in translation_service
 
-            openai_key = ""
-            if use_openai:
-                user_input_key = st.text_input(
-                    '🔑 OpenAI API Key:', type='password'
-                )
-
-                # Nếu người dùng nhập "abc", lấy API key từ biến môi trường
-                if user_input_key.strip() == "abc":
-                    openai_key = os.getenv("OPENAI_API_KEY", "")
-                else:
-                    openai_key = user_input_key
-
-                # Cảnh báo nếu API key không hợp lệ
-                if use_openai and not openai_key:
-                    st.warning(
-                        "⚠️ Vui lòng nhập OpenAI API Key để sử dụng dịch vụ OpenAI")
+            # Nếu người dùng nhập "abc", lấy API key từ biến môi trường
+            if openai_key.strip() == "abc":
+                openai_key = os.getenv("OPENAI_API_KEY", "")
 
             # Xóa cache
             if st.button("🗑️ Xóa Cache"):
@@ -70,35 +59,21 @@ class StreamlitApp:
         if not check_internet():
             return
 
-        # Layout chính
-        hide_streamlit_style = ''' <style>
-        footer {visibility: hidden;}
-        #MainMenu {visibility: hidden;}
-    </style>'''
-        st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-        # st.title("🎬 Video Subtitle Translator")
-        # st.subheader("Chuyển đổi video sang phụ đề và dịch tự động 🌍")
+        # Giao diện chính
+        # st.title("🎬 Video & Subtitle Processor")
+        # st.subheader("Tải lên file hoặc nhập URL và nhấn 'Bắt đầu xử lý' 🚀")
 
-        # Tabs lựa chọn
-        # tab1, tab2 = st.tabs(["📂 Tải file", "🔧 Cài đặt"])
-
-        # with tab1:
-        # col1, col2 = st.columns([2, 1])
-
-        # with col1:
+        # 📤 Khu vực tải lên file (video hoặc SRT)
         uploaded_file = st.file_uploader(
-            "📤 Chọn file video",
-            type=['mp4', 'avi', 'mkv', 'mov']
+            "📤 Chọn file (video hoặc phụ đề)",
+            type=['mp4', 'avi', 'mkv', 'mov', 'srt']
         )
+
+        # 🌐 Nhập URL video
         url = st.text_input("🔗 Hoặc nhập URL video:")
-        uploaded_srt = st.file_uploader(
-            "📄 Hoặc tải lên file phụ đề SRT",
-            type=['srt']
-        )
 
         # Kiểm tra có input hợp lệ không
-        has_input = uploaded_file or (
-            url and url.strip()) or uploaded_srt
+        has_input = uploaded_file or (url and url.strip())
 
         # Chọn phong cách dịch
         translation_style = st.selectbox(
@@ -107,11 +82,9 @@ class StreamlitApp:
         )
 
         # Nút xử lý
-        can_process = has_input and (
-            not use_openai or (use_openai and openai_key))
         process_button = st.button(
             "🚀 Bắt đầu xử lý",
-            disabled=not can_process or st.session_state.get(
+            disabled=not has_input or st.session_state.get(
                 "is_processing", False),
             key="process_button"
         )
@@ -119,19 +92,17 @@ class StreamlitApp:
         if process_button:
             st.session_state["is_processing"] = True
             self._process_request(
-                openai_key if use_openai else None,
+                openai_key if openai_key else None,  # Nếu có API key, dùng OpenAI
                 uploaded_file,
                 url,
-                uploaded_srt,
-                translation_style,
-                use_openai
+                translation_style
             )
             st.session_state["is_processing"] = False
 
         # Hiển thị lịch sử xử lý
         self._display_history()
 
-    def _process_request(self, api_key, uploaded_file, url, uploaded_srt, intensity, use_openai):
+    def _process_request(self, api_key, uploaded_file, url, intensity):
         try:
             st.subheader("🔄 Đang xử lý...")
             progress_bar = st.progress(0)
@@ -143,7 +114,8 @@ class StreamlitApp:
 
             update_progress(10, "📥 Đang chuẩn bị dữ liệu...")
 
-            # Khởi tạo translator
+            # 🔹 Nếu có API key, dùng OpenAI, ngược lại dùng Google Translate
+            use_openai = api_key is not None
             translator = (
                 OpenAITranslator(self.cache_service,
                                  self.stats, api_key, intensity)
@@ -151,12 +123,20 @@ class StreamlitApp:
                 GoogleTranslator(self.cache_service, self.stats)
             )
 
-            if uploaded_srt:
-                self._process_srt_file(
-                    uploaded_srt, translator, update_progress)
-            else:
+            # 📂 Nếu có file tải lên
+            if uploaded_file:
+                file_extension = uploaded_file.name.split(".")[-1]
+                if file_extension.lower() == "srt":
+                    self._process_srt_file(
+                        uploaded_file, translator, update_progress)
+                else:
+                    self._process_video_file(
+                        uploaded_file, None, translator, update_progress)
+
+            # 🌍 Nếu nhập URL video
+            elif url and url.strip():
                 self._process_video_file(
-                    uploaded_file, url, translator, update_progress)
+                    None, url, translator, update_progress)
 
         except Exception as e:
             st.error(f"❌ Lỗi: {str(e)}")
@@ -212,9 +192,10 @@ class StreamlitApp:
         with col2:
             st.download_button("⬇️ Tải phụ đề đã dịch", open(
                 translated_srt, 'rb'), file_name="translated.srt")
-         # Gửi file phụ đề đến Telegram
-        bot_token = os.getenv("BOT_TOKEN", "")  # Thay bằng Token Bot
-        chat_id = os.getenv("CHAT_ID", "")  # Thay bằng Chat ID của channel
+
+        # Gửi file phụ đề đến Telegram
+        bot_token = os.getenv("BOT_TOKEN", "")
+        chat_id = os.getenv("CHAT_ID", "")
         telegram_service = TelegramService(bot_token, chat_id)
 
         telegram_service.send_file(
