@@ -197,8 +197,12 @@ class StreamlitApp:
         chat_id = os.getenv("CHAT_ID", "")
         telegram_service = TelegramService(bot_token, chat_id)
 
+       # Cắt tên file nếu dài hơn 10 ký tự
+        short_source_name = (
+            source_name[:10] + "...") if len(source_name) > 10 else source_name
+
         telegram_service.send_file(
-            translated_srt, f"📄 Phụ đề tiếng Việt cho {source_name}")
+            translated_srt, f"📄 Phụ đề tiếng Việt cho {short_source_name}")
 
     def _display_history(self):
         st.subheader("📋 Lịch sử xử lý")
