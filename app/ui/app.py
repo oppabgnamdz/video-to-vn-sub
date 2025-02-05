@@ -49,7 +49,10 @@ class StreamlitApp:
             # Nếu người dùng nhập "abc", lấy API key từ biến môi trường
             if openai_key.strip() == "abc":
                 openai_key = os.getenv("OPENAI_API_KEY", "")
-
+            translation_style = st.selectbox(
+                "✍️ Phong cách dịch:",
+                ["📖 Trang trọng", "💬 Thông dụng"]
+            )
             # Xóa cache
             if st.button("🗑️ Xóa Cache"):
                 self.cache_service.clear()
@@ -76,10 +79,6 @@ class StreamlitApp:
         has_input = uploaded_file or (url and url.strip())
 
         # Chọn phong cách dịch
-        translation_style = st.selectbox(
-            "✍️ Phong cách dịch:",
-            ["📖 Trang trọng", "💬 Thông dụng"]
-        )
 
         # Nút xử lý
         process_button = st.button(
