@@ -90,16 +90,27 @@ class StreamlitApp:
 
         if process_button:
             st.session_state["is_processing"] = True
+
+            # 🔹 Xác định loại dịch vụ dịch thuật
+            use_openai = openai_key is not None
+            translate_service = "🌟 OpenAI (Chất lượng cao)" if use_openai else "🆓 Google Translate (Miễn phí)"
+
+            # 🔹 Hiển thị thông báo về loại dịch thuật
+            st.info(
+                f"🔍 Đang sử dụng **{translate_service}** để dịch phụ đề...")
+
+            # 🔹 Gọi hàm xử lý dịch thuật
             self._process_request(
                 openai_key if openai_key else None,  # Nếu có API key, dùng OpenAI
                 uploaded_file,
                 url,
                 translation_style
             )
-            st.session_state["is_processing"] = False
 
-        # Hiển thị lịch sử xử lý
-        self._display_history()
+    st.session_state["is_processing"] = False
+
+    # Hiển thị lịch sử xử lý
+    self._display_history()
 
     def _process_request(self, api_key, uploaded_file, url, intensity):
         try:
