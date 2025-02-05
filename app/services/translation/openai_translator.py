@@ -19,6 +19,11 @@ class OpenAITranslator(BaseTranslator):
         return self.translate_batch([text], source_lang, target_lang)[0]
 
     def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
+        # 🔹 Kiểm tra API Key trước khi gọi OpenAI API
+        if not self.api_key or not self.api_key.startswith("sk-"):
+            st.error("❌ OpenAI API Key không hợp lệ! Dừng tiến trình dịch.")
+            st.stop()  # 🔥 Dừng ngay lập tức, không tiếp tục xử lý
+
         numbered_texts = [f"{i+1}. {text}" for i, text in enumerate(texts)]
         combined_text = "\n".join(numbered_texts)
 
@@ -40,6 +45,11 @@ class OpenAITranslator(BaseTranslator):
                 temperature=temperature
             )
 
+            # 🔹 Kiểm tra nếu OpenAI trả về lỗi
+            if "error" in response:
+                st.error(f"❌ Lỗi OpenAI: {response['error']['message']}")
+                st.stop()  # 🔥 Dừng toàn bộ tiến trình
+
             self._update_stats(response['usage'])
 
             translated_text = response['choices'][0]['message']['content'].strip(
@@ -58,8 +68,13 @@ class OpenAITranslator(BaseTranslator):
 
             return translated_sentences
 
+        except openai.error.OpenAIError as e:
+            st.error(f"❌ Lỗi từ OpenAI API: {str(e)}")
+            st.stop()  # 🔥 Dừng nếu gặp lỗi từ OpenAI API
+
         except Exception as e:
-            st.error(f"❌ Lỗi dịch OpenAI: {str(e)}")
+            st.error(f"❌ Lỗi hệ thống: {str(e)}")
+            st.stop()  # 🔥 Dừng nếu gặp lỗi khác
             return [""] * len(texts)
 
     def _detect_language(self, subs: pysrt.SubRipFile) -> str:
