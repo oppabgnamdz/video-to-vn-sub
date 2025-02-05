@@ -92,7 +92,7 @@ class StreamlitApp:
             st.session_state["is_processing"] = True
 
             # 🔹 Xác định loại dịch vụ dịch thuật
-            use_openai = openai_key is not None
+            use_openai = bool(openai_key.strip())
             translate_service = "🌟 OpenAI (Chất lượng cao)" if use_openai else "🆓 Google Translate (Miễn phí)"
 
             # 🔹 Hiển thị thông báo về loại dịch thuật
