@@ -107,10 +107,10 @@ class StreamlitApp:
                 translation_style
             )
 
-    st.session_state["is_processing"] = False
+            st.session_state["is_processing"] = False
 
-    # Hiển thị lịch sử xử lý
-    self._display_history()
+        # Hiển thị lịch sử xử lý
+        self._display_history()
 
     def _process_request(self, api_key, uploaded_file, url, intensity):
         try:
