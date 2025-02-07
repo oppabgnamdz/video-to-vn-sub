@@ -27,10 +27,10 @@ class OpenAITranslator(BaseTranslator):
         numbered_texts = [f"{i+1}. {text}" for i, text in enumerate(texts)]
         combined_text = "\n".join(numbered_texts)
 
-        style = "dịch tự nhiên, phù hợp với bối cảnh người lớn, hấp dẫn và thú vị." \
+        style = "dịch tự nhiên, phù hợp với bối cảnh phim người lớn,phim khiêu dâm, phim 18 +, hấp dẫn và thú vị." \
             if self.intensity == "mild" else "văn phong thông dụng, tự nhiên"
 
-        temperature = 0.6 if self.intensity == "mild" else 0.9
+        temperature = 0.6 if self.intensity == "mild" else 0.7
 
         system_message = f"Bạn là một dịch giả chuyên nghiệp. Hãy dịch với {style}. Dịch từ {source_lang} sang tiếng Việt."
 
