@@ -12,6 +12,7 @@ import m3u8
 import requests
 from urllib.parse import urljoin
 import subprocess
+import whisper
 
 
 class VideoProcessor:
@@ -198,34 +199,34 @@ class VideoProcessor:
             return False
 
     def _speech_to_srt(self, audio_path: Path, output_srt: Path) -> Tuple[bool, Optional[str]]:
-        """Chuyển đổi âm thanh thành phụ đề SRT"""
-        recognizer = sr.Recognizer()
-        detected_language = None
-
+        """Chuyển đổi âm thanh thành phụ đề SRT sử dụng Whisper"""
         try:
-            # Phát hiện ngôn ngữ từ đoạn mẫu
-            with sr.AudioFile(str(audio_path)) as source:
-                audio_sample = recognizer.record(
-                    source,
-                    duration=min(10, source.DURATION)
-                )
-                detected_language = self._detect_language(
-                    audio_sample,
-                    recognizer
-                )
+            # Tải mô hình Whisper medium
+            model = whisper.load_model("medium")
 
-            # Xử lý toàn bộ file audio
-            with sr.AudioFile(str(audio_path)) as source:
-                self._process_audio_chunks(
-                    source,
-                    recognizer,
-                    detected_language,
-                    output_srt
-                )
+            # Nhận dạng với Whisper
+            result = model.transcribe(str(audio_path), fp16=False)
+
+            # Lấy kết quả và phát hiện ngôn ngữ
+            detected_language = result.get("language", "vi")
+
+            # Tạo phụ đề SRT từ kết quả
+            with open(output_srt, 'w', encoding='utf-8') as srt_file:
+                subtitle_count = 1
+                for segment in result["segments"]:
+                    start_time = self._format_timestamp(segment["start"])
+                    end_time = self._format_timestamp(segment["end"])
+                    text = segment["text"].strip()
+
+                    # Ghi phụ đề theo định dạng SRT
+                    srt_file.write(
+                        f"{subtitle_count}\n{start_time} --> {end_time}\n{text}\n\n")
+                    subtitle_count += 1
 
             return True, detected_language
+
         except Exception as e:
-            st.error(f"Lỗi khi tạo phụ đề: {str(e)}")
+            st.error(f"Lỗi khi tạo phụ đề với Whisper: {str(e)}")
             return False, None
 
     def _detect_language(self, audio_sample: sr.AudioData,
