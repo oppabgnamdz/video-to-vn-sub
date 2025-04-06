@@ -1,39 +1,48 @@
-# Use Python 3.9 slim image
-FROM python:3.9-slim
+# Sử dụng multi-stage build để tối ưu
+FROM python:3.9-slim AS builder
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    libportaudio2 \
+# Cài đặt chỉ các dependencies cần thiết để build
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    gcc \
     python3-dev \
     build-essential \
-    portaudio19-dev \
-    gcc \
-    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Thiết lập môi trường
+WORKDIR /build
+COPY requirements.txt .
+
+# Cài đặt dependencies
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage chính
+FROM python:3.9-slim
+
+# Cài đặt chỉ runtime dependencies
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    ffmpeg \
     flac \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Thiết lập môi trường
+WORKDIR /app
 
-# Verify installations
-RUN python -c "import openai; import moviepy; import whisper; import pysrt; import langdetect; import telegram; print('All required packages installed successfully')"
+# Copy các dependencies từ builder
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
 
-# Copy application code
+# Copy mã nguồn
 COPY . .
 
-# Create necessary directories
+# Tạo thư mục cần thiết
 RUN mkdir -p output/temp
 
-# Set environment variables
+# Thiết lập biến môi trường
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Command to run the application (default entry point, can be overridden)
+# Tải trước mô hình Whisper để tránh tải khi chạy
+RUN python -c "import whisper; whisper.load_model('medium')"
+
+# Command mặc định
 CMD ["python", "app/telegram_bot.py"]
