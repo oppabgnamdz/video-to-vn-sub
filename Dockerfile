@@ -23,21 +23,17 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # Verify installations
-RUN python -c "import streamlit; import openai; import moviepy; import speech_recognition; import pysrt; import langdetect; print('All required packages installed successfully')"
+RUN python -c "import openai; import moviepy; import whisper; import pysrt; import langdetect; import telegram; print('All required packages installed successfully')"
 
 # Copy application code
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p data/cache
+RUN mkdir -p output/temp
 
 # Set environment variables
 ENV PYTHONPATH=/app
-ENV STREAMLIT_SERVER_PORT=8501
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ENV PYTHONUNBUFFERED=1
 
-# Expose port
-EXPOSE 8501
-
-# Command to run the application
-CMD ["python", "-m", "streamlit", "run", "app/main.py"]
+# Command to run the application (default entry point, can be overridden)
+CMD ["python", "app/telegram_bot.py"]

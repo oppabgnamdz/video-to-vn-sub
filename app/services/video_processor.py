@@ -1,8 +1,7 @@
 from pathlib import Path
-import streamlit as st
-import speech_recognition as sr
+import logging
 from moviepy.editor import VideoFileClip
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Callable, Any
 from langdetect import detect, LangDetectException
 from models.data_models import ProcessingResult
 from utils.internet_utils import download_file
@@ -20,9 +19,10 @@ class VideoProcessor:
         self.output_dir = Path(output_dir)
         self.temp_dir = self.output_dir / "temp"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = logging.getLogger("VideoProcessor")
 
     def process_video(self, source_type: str, source_data: any,
-                      progress_callback) -> ProcessingResult:
+                      progress_callback: Callable[[int, str], Any]) -> ProcessingResult:
         video_path = self.temp_dir / "video.mp4"
         audio_path = self.temp_dir / "audio.wav"
         srt_path = self.output_dir / "output.srt"
@@ -31,13 +31,13 @@ class VideoProcessor:
             # Xử lý nguồn video dựa trên source_type
             if source_type == "upload":
                 source_name = source_data.name
-                progress_callback(15, "📥 Đang lưu video... (15%)")
+                progress_callback(15, "Đang lưu video... (15%)")
                 if not save_uploaded_file(source_data, video_path):
                     return ProcessingResult(False, error_message="Lỗi khi lưu file")
 
             elif source_type == "m3u8":
                 source_name = "m3u8_video.mp4"
-                progress_callback(15, "📥 Đang tải video từ M3U8... (15%)")
+                progress_callback(15, "Đang tải video từ M3U8... (15%)")
                 success, error = self._process_m3u8(
                     source_data, video_path, progress_callback)
                 if not success:
@@ -45,19 +45,19 @@ class VideoProcessor:
 
             else:  # URL thông thường
                 source_name = source_data
-                progress_callback(15, "📥 Đang tải video từ URL... (15%)")
+                progress_callback(15, "Đang tải video từ URL... (15%)")
                 success, error = download_file(source_data, video_path)
                 if not success:
                     return ProcessingResult(False, error_message=error)
 
             # Trích xuất audio
-            progress_callback(30, "🎵 Đang trích xuất âm thanh... (30%)")
+            progress_callback(30, "Đang trích xuất âm thanh... (30%)")
             if not self._extract_audio(video_path, audio_path):
                 return ProcessingResult(False, error_message="Lỗi khi trích xuất âm thanh")
 
             # Chuyển đổi speech to text
             progress_callback(
-                45, "🔍 Đang chuyển đổi âm thanh thành văn bản... (45%)")
+                45, "Đang chuyển đổi âm thanh thành văn bản... (45%)")
             success, detected_language = self._speech_to_srt(
                 audio_path, srt_path)
             if not success:
@@ -76,7 +76,7 @@ class VideoProcessor:
             delete_file(audio_path)
 
     def _process_m3u8(self, m3u8_url: str, output_path: Path,
-                      progress_callback) -> Tuple[bool, Optional[str]]:
+                      progress_callback: Callable[[int, str], Any]) -> Tuple[bool, Optional[str]]:
         """Xử lý và tải video từ M3U8 playlist"""
         try:
             # Tạo thư mục tạm cho segments
@@ -113,13 +113,13 @@ class VideoProcessor:
                         downloaded_segments.append(str(segment_path))
                         progress_callback(
                             15 + (i / total_segments * 10),
-                            f"📥 Đang tải segment {i + 1}/{total_segments}..."
+                            f"Đang tải segment {i + 1}/{total_segments}..."
                         )
                     else:
-                        st.warning(
+                        self.logger.warning(
                             f"Không thể tải segment {i}: HTTP {response.status_code}")
                 except Exception as e:
-                    st.warning(f"Lỗi khi tải segment {i}: {str(e)}")
+                    self.logger.warning(f"Lỗi khi tải segment {i}: {str(e)}")
                     continue
 
             if not downloaded_segments:
@@ -132,7 +132,7 @@ class VideoProcessor:
                     f.write(f"file '{segment}'\n")
 
             # Sử dụng ffmpeg để ghép file
-            progress_callback(25, "🔄 Đang ghép video... (25%)")
+            progress_callback(25, "Đang ghép video... (25%)")
 
             try:
                 # Ghép segments thành TS
@@ -195,7 +195,7 @@ class VideoProcessor:
                 )
             return True
         except Exception as e:
-            st.error(f"Lỗi khi trích xuất âm thanh: {str(e)}")
+            self.logger.error(f"Lỗi khi trích xuất âm thanh: {str(e)}")
             return False
 
     def _speech_to_srt(self, audio_path: Path, output_srt: Path) -> Tuple[bool, Optional[str]]:
@@ -226,85 +226,8 @@ class VideoProcessor:
             return True, detected_language
 
         except Exception as e:
-            st.error(f"Lỗi khi tạo phụ đề với Whisper: {str(e)}")
+            self.logger.error(f"Lỗi khi tạo phụ đề với Whisper: {str(e)}")
             return False, None
-
-    def _detect_language(self, audio_sample: sr.AudioData,
-                         recognizer: sr.Recognizer) -> str:
-        """Phát hiện ngôn ngữ từ mẫu âm thanh"""
-        for lang_code in LANGUAGE_CODES.values():
-            try:
-                sample_text = recognizer.recognize_google(
-                    audio_sample,
-                    language=lang_code
-                )
-                detected_lang = detect(sample_text)
-                if detected_lang:
-                    st.info(f"🎯 Ngôn ngữ phát hiện: {detected_lang}")
-                    return detected_lang
-            except:
-                continue
-
-        st.warning(
-            "⚠️ Không phát hiện được ngôn ngữ, dùng tiếng Nhật làm mặc định")
-        return 'ja'
-
-    def _process_audio_chunks(self, audio_file: sr.AudioFile,
-                              recognizer: sr.Recognizer,
-                              detected_language: str,
-                              output_srt: Path) -> None:
-        """Xử lý file âm thanh theo từng đoạn"""
-        chunk_duration = 10  # seconds
-        audio_length = audio_file.DURATION
-        progress_bar = st.progress(0)
-        progress_text = st.empty()
-
-        with open(output_srt, 'w', encoding='utf-8') as srt_file:
-            subtitle_count = 1
-            for i in range(0, int(audio_length), chunk_duration):
-                # Ghi nhận âm thanh theo chunk
-                audio = recognizer.record(
-                    audio_file,
-                    duration=min(chunk_duration, audio_length-i)
-                )
-
-                try:
-                    # Nhận dạng text
-                    lang_code = LANGUAGE_CODES.get(detected_language, 'ja-JP')
-                    text = recognizer.recognize_google(
-                        audio,
-                        language=lang_code
-                    )
-                except sr.UnknownValueError:
-                    text = "..."
-                except sr.RequestError as e:
-                    st.warning(f"Lỗi API Google Speech Recognition: {str(e)}")
-                    continue
-
-                # Ghi phụ đề
-                self._write_subtitle(
-                    srt_file,
-                    subtitle_count,
-                    i,
-                    min(i + chunk_duration, audio_length),
-                    text
-                )
-                subtitle_count += 1
-
-                # Cập nhật progress
-                if audio_length:
-                    progress = i / audio_length
-                    progress_bar.progress(progress)
-                    progress_text.text(f"Đang xử lý: {(progress * 100):.1f}%")
-
-    @staticmethod
-    def _write_subtitle(srt_file: any, count: int,
-                        start_seconds: float, end_seconds: float,
-                        text: str) -> None:
-        """Ghi một phụ đề vào file SRT"""
-        start_time = VideoProcessor._format_timestamp(start_seconds)
-        end_time = VideoProcessor._format_timestamp(end_seconds)
-        srt_file.write(f"{count}\n{start_time} --> {end_time}\n{text}\n\n")
 
     @staticmethod
     def _format_timestamp(seconds: float) -> str:

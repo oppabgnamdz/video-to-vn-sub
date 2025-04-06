@@ -1,10 +1,12 @@
 import os
 import time
 import shutil
-import streamlit as st
+import logging
 from pathlib import Path
 from typing import Optional, List, Tuple
 from config import MAX_FILE_SIZE, FILE_RETENTION_DAYS
+
+logger = logging.getLogger("FileUtils")
 
 
 def validate_file_size(file) -> bool:
@@ -12,14 +14,14 @@ def validate_file_size(file) -> bool:
     Kiểm tra xem kích thước file có nằm trong giới hạn cho phép không.
 
     Args:
-        file: File đã upload (từ st.file_uploader)
+        file: File đã upload
 
     Returns:
         bool: True nếu file hợp lệ, False nếu quá lớn
     """
     if file.size > MAX_FILE_SIZE:
-        st.error(
-            f"❌ File quá lớn. Giới hạn {MAX_FILE_SIZE / (1024*1024):.1f}MB")
+        logger.error(
+            f"File quá lớn. Giới hạn {MAX_FILE_SIZE / (1024*1024):.1f}MB")
         return False
     return True
 
@@ -41,7 +43,7 @@ def save_uploaded_file(uploaded_file, save_path: Path) -> bool:
             f.write(uploaded_file.getbuffer())
         return True
     except Exception as e:
-        st.error(f"Lỗi khi lưu file: {str(e)}")
+        logger.error(f"Lỗi khi lưu file: {str(e)}")
         return False
 
 
@@ -60,7 +62,7 @@ def cleanup_old_files(directory: Path) -> None:
                 if file_age > FILE_RETENTION_DAYS * 24 * 3600:
                     delete_file(file)
     except Exception as e:
-        st.warning(f"⚠️ Lỗi khi dọn dẹp file tạm: {str(e)}")
+        logger.warning(f"Lỗi khi dọn dẹp file tạm: {str(e)}")
 
 
 def ensure_directories(*directories: Path) -> None:
@@ -74,7 +76,7 @@ def ensure_directories(*directories: Path) -> None:
         try:
             directory.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            st.error(f"Lỗi khi tạo thư mục {directory}: {str(e)}")
+            logger.error(f"Lỗi khi tạo thư mục {directory}: {str(e)}")
 
 
 def delete_file(file_path: Path) -> None:
@@ -88,7 +90,7 @@ def delete_file(file_path: Path) -> None:
         if file_path.exists():
             file_path.unlink()
     except Exception as e:
-        st.warning(f"⚠️ Lỗi khi xóa file {file_path}: {str(e)}")
+        logger.warning(f"Lỗi khi xóa file {file_path}: {str(e)}")
 
 
 def get_unique_filename(directory: Path, base_name: str, extension: str) -> Path:
@@ -149,7 +151,7 @@ def copy_file(source: Path, destination: Path) -> bool:
         shutil.copy2(source, destination)
         return True
     except Exception as e:
-        st.error(f"Lỗi khi copy file: {str(e)}")
+        logger.error(f"Lỗi khi copy file: {str(e)}")
         return False
 
 

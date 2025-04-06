@@ -3,10 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8501:8501"
     volumes:
-      - ./data:/app/data
+      - ./output:/app/output
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    entrypoint: 'python'
+    command: ['app/telegram_bot.py']
     restart: unless-stopped
