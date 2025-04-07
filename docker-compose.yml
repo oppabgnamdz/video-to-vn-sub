@@ -8,6 +8,7 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
     entrypoint: 'python'
     command: ['app/telegram_bot.py']
     restart: unless-stopped

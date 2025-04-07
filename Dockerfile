@@ -42,7 +42,7 @@ ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
 # Tải trước mô hình Whisper để tránh tải khi chạy
-RUN python -c "import whisper; whisper.load_model('medium')"
+RUN python -c "import whisper; whisper.load_model('small')"
 
 # Command mặc định
 CMD ["python", "app/telegram_bot.py"]
