@@ -202,7 +202,7 @@ class VideoProcessor:
         """Chuyển đổi âm thanh thành phụ đề SRT sử dụng Whisper"""
         try:
             # Tải mô hình Whisper medium
-            model = whisper.load_model("medium")
+            model = whisper.load_model("small")
 
             # Nhận dạng với Whisper
             result = model.transcribe(str(audio_path), fp16=False)

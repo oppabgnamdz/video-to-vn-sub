@@ -7,6 +7,49 @@ if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null;
     exit 1
 fi
 
+# Kiểm tra RAM
+if command -v free &> /dev/null; then
+    total_ram=$(free -m | awk '/^Mem:/{print $2}')
+    echo "====================================="
+    echo "Tổng RAM: ${total_ram}MB"
+    
+    # Đề xuất mô hình dựa trên RAM
+    if [ "$total_ram" -lt 2048 ]; then
+        suggested_model="tiny"
+        echo "⚠️ RAM quá thấp, chỉ nên dùng mô hình tiny"
+    elif [ "$total_ram" -lt 4096 ]; then
+        suggested_model="base"
+        echo "🔶 RAM trung bình, nên dùng mô hình base"
+    elif [ "$total_ram" -lt 8192 ]; then
+        suggested_model="small"
+        echo "✅ RAM khá tốt, có thể dùng mô hình small"
+    else
+        suggested_model="medium"
+        echo "🔷 RAM cao, có thể dùng mô hình medium"
+    fi
+    echo "====================================="
+else
+    suggested_model="small"
+fi
+
+# Chọn mô hình Whisper
+echo "Chọn mô hình Whisper (mặc định: $suggested_model):"
+echo "1. tiny   - Nhẹ nhất, yêu cầu ít RAM (~1GB)"
+echo "2. base   - Nhẹ, độ chính xác tạm được (~2GB RAM)"
+echo "3. small  - Cân bằng giữa chính xác và RAM (~4GB RAM)"
+echo "4. medium - Chính xác nhất, cần nhiều RAM (~5GB RAM)"
+read -p "> (1/2/3/4, Enter để dùng $suggested_model): " model_choice
+
+case $model_choice in
+    1) whisper_model="tiny" ;;
+    2) whisper_model="base" ;;
+    3) whisper_model="small" ;;
+    4) whisper_model="medium" ;;
+    *) whisper_model="$suggested_model" ;;
+esac
+
+echo "Đã chọn mô hình: $whisper_model"
+
 # Nhập Telegram Bot Token
 echo "Nhập Telegram Bot Token:"
 read -p "> " TELEGRAM_BOT_TOKEN
@@ -24,6 +67,7 @@ read -p "> " OPENAI_API_KEY
 echo "====================================="
 echo "Token Bot Telegram: $TELEGRAM_BOT_TOKEN"
 echo "OpenAI API Key: ${OPENAI_API_KEY:-Không sử dụng}"
+echo "Mô hình Whisper: $whisper_model"
 echo "====================================="
 
 # Xác nhận
@@ -35,6 +79,7 @@ fi
 
 # Tạo file .env
 echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" > .env
+echo "WHISPER_MODEL=$whisper_model" >> .env
 if [ ! -z "$OPENAI_API_KEY" ]; then
     echo "OPENAI_API_KEY=$OPENAI_API_KEY" >> .env
 fi
